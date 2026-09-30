@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon Jan 10 08:29:36 2022
@@ -26,7 +27,8 @@ parser = argparse.ArgumentParser(prog= 'PCR_Virtual.py',
                                  usage = '''
 python PCR_VIRTUAL.py -i INPUT -f forward -r reverse -p 0.8
 Ejemplo:
-python PCR_VIRTUAL.py -i test.fasta -f CGTCCAARRGGATACTGATC -rc GCACAGGGTCATAATAATGG -p 0.85''')
+python PCR_VIRTUAL.py -i test.fasta -f CGTCCAARRGGATACTGATC -rc GCACAGGGTCATAATAATGG -p 0.85
+python PCR_VIRTUAL.py -i test.fasta -f CGTCCAARRGGATACTGATC -rc GCACAGGGTCATAATAATGG -p 0.85 -c 50''')
 
 
 parser.add_argument('-i', '--Infile',  help = 'Archivo fasta/multifasta')
@@ -36,6 +38,7 @@ parser.add_argument('-rc', '--ReverseComplement', help = 'Secuencia reverse comp
 parser.add_argument('-p', '--Pident',  help = 'Porcentaje identidad mínimo (Default 0.9)', default=0.9, type=float)
 parser.add_argument('-l', '--Length', help = 'Largo amplicon. (Default 1-10000000)',default='1-10000000', type=str)
 parser.add_argument('-s', '--Show', help = 'Muestra producto PCR (A) o producto sin partidores (a).',default= 'A', type=str)
+parser.add_argument('-c', '--Context', help = 'Bases de contexto a mostrar a la izquierda del forward y a la derecha del reverse (Default 0)', default=0, type=int)
 
 
 args = parser.parse_args()
@@ -57,6 +60,10 @@ if args.Reverse == None and args.ReverseComplement == None:
     parser.print_help()
     exit()
 
+
+if args.Context < 0:
+    print('El contexto (-c) debe ser un número entero mayor o igual a 0')
+    exit()
 
 if args.ReverseComplement != None:
     args.Reverse = Seq.Seq(args.ReverseComplement).reverse_complement()
@@ -135,6 +142,25 @@ def PCR(ref, seq):
     return matches
 
 
+def contexto(seq, f, r):
+
+    """
+    Extrae las bases de contexto a la izquierda del forward y a la derecha del reverse.
+    Si el contexto excede los bordes de la secuencia, se toma hasta el borde.
+    :param seq: secuencia completa (Seq)
+    :param f: match forward [coord1, coord2, secuencia]
+    :param r: match reverse [coord1, coord2, secuencia]
+    :return: list [contexto_izq, contexto_der]
+    """
+
+    ini = max(0, f[0] - args.Context)
+    fin = min(len(seq), r[1] + args.Context)
+    ctx_L = seq[ini: max(0, f[0])]
+    ctx_R = seq[r[1]: fin]
+
+    return [ctx_L, ctx_R]
+
+
 def main():
     resume = {}
     multifasta = SeqIO.parse(in_file, 'fasta')
@@ -151,14 +177,22 @@ def main():
                         amp = (fasta.seq)[f[1]: r[0]]
                         if len(amp) >= l_min and len(amp) <= l_max:
                             largo_amp = '(%spb)' %(str(len(amp)))
-                            print('>'+ID+ '-' + largo_amp)
 
-                            # Muestra solo amplicon
-                            if args.Show == 'a':
-                                print(amp.upper())
-                            # Muestra primer_F + amplicons + primer_R
-                            elif args.Show == 'A':
-                                print(f[2].lower() + amp.upper() + r[2].lower())
+                            # Muestra contexto_izq + primer_F + amplicon + primer_R + contexto_der
+                            if args.Context > 0:
+                                ctx_L, ctx_R = contexto(fasta.seq, f, r)
+                                print('>'+ID+ '-' + largo_amp + ' contexto:%s|%s' %(len(ctx_L), len(ctx_R)))
+                                print(ctx_L.lower() + f[2].upper() + amp.lower() + r[2].upper() + ctx_R.lower())
+
+                            else:
+                                print('>'+ID+ '-' + largo_amp)
+
+                                # Muestra solo amplicon
+                                if args.Show == 'a':
+                                    print(amp.upper())
+                                # Muestra primer_F + amplicons + primer_R
+                                elif args.Show == 'A':
+                                    print(f[2].lower() + amp.upper() + r[2].lower())
 
                             if ID not in resume:  
                                 resume[ID] = 1
@@ -182,15 +216,23 @@ def main():
                         amp = fasta.seq.reverse_complement()[f[1]: r[0]]
                         if len(amp) >= l_min and len(amp) <= l_max:
                             largo_amp = '(%spb)' %(str(len(amp)))
-                            print('>RC_'+ID+ '-' + largo_amp)
 
-                            # Muestra solo amplicon
-                            if args.Show == 'a':
-                                print(amp.upper())
+                            # Muestra contexto_izq + primer_F + amplicon + primer_R + contexto_der
+                            if args.Context > 0:
+                                ctx_L, ctx_R = contexto(fasta.seq.reverse_complement(), f, r)
+                                print('>RC_'+ID+ '-' + largo_amp + ' contexto:%s|%s' %(len(ctx_L), len(ctx_R)))
+                                print(ctx_L.lower() + f[2].upper() + amp.lower() + r[2].upper() + ctx_R.lower())
 
-                            # Muestra primer_F + amplicons + primer_R
-                            elif args.Show == 'A':
-                                print(f[2].lower() + amp.upper() + r[2].lower())
+                            else:
+                                print('>RC_'+ID+ '-' + largo_amp)
+
+                                # Muestra solo amplicon
+                                if args.Show == 'a':
+                                    print(amp.upper())
+
+                                # Muestra primer_F + amplicons + primer_R
+                                elif args.Show == 'A':
+                                    print(f[2].lower() + amp.upper() + r[2].lower())
 
                             if ID not in resume:  
                                 resume[ID] = 1
